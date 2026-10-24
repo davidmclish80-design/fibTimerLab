@@ -3,8 +3,12 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <signal.h>
-#include <wait.h>
+#include <sys/wait.h>
 #include <stdlib.h>
+
+//for portability, just incase...
+#include <stdbool.h>
+
 
 //GLOBAL VARIABLES
 int fn1, fn2, fn3;
@@ -20,7 +24,7 @@ struct itimerval timer;
 
 
 //FUNCTION DECLARATIONS
-bool correctNumberOfArgs(int arraySize, int correctMaxSize);
+void correctNumberOfArgs(int arraySize, int correctMaxSize);
 
 void lazyExit(void);
 
@@ -43,7 +47,7 @@ int main(int argc, char *argv[])
 {
   correctNumberOfArgs(argc, 4);
   valueChecker(argc, argv, 1);
-  fflush(stdin); //just incase ig
+  fflush(stdout); //just incase ig
   
   //parent calculates anytime, but prints its profile after the children.
   //pid_t parentpid = getpid();
@@ -115,7 +119,7 @@ int main(int argc, char *argv[])
 
 
 //FUNCTION IMPLEMENTATIONS
-bool correctNumberOfArgs(int arraySize, int correctMaxSize) {
+void correctNumberOfArgs(int arraySize, int correctMaxSize) {
   if(arraySize != correctMaxSize){
     printf("Not enough arguments\n");
     lazyExit();
@@ -223,23 +227,23 @@ void profileProcess() {
   getitimer(ITIMER_REAL, &timer);
   int microsecs = timer.it_value.tv_usec;
   int usecs_remaining = 1000000 - microsecs;
-  walltimeSec = counterReal;
+  walltimeSec = counterReal + timer.it_value.tv_sec;
   walltimeUsec = usecs_remaining;
 
   getitimer(ITIMER_VIRTUAL, &timer);
   microsecs = timer.it_value.tv_usec;
   usecs_remaining = 1000000 - microsecs;
-  userspacetimeSec = counterVirt;
+  userspacetimeSec = counterVirt + timer.it_value.tv_sec;
   userspacetimeUsec = usecs_remaining;
 
   getitimer(ITIMER_PROF, &timer);
   microsecs = timer.it_value.tv_usec;
   usecs_remaining = 1000000 - microsecs;
-  cputimeSec = counterProf;
+  cputimeSec = counterProf + timer.it_value.tv_sec;
   cputimeUsec = usecs_remaining;
 
   kerneltimeSec = cputimeSec - userspacetimeSec; 
-  kerneltimeUsec = cputimeUsec - userspacetimeUsec;
+  kerneltimeUsec = abs(cputimeUsec - userspacetimeUsec);
 }
 
 void printProfile(void) {
