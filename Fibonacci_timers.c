@@ -10,8 +10,13 @@
 int fn1, fn2, fn3;
 long int fibresult;
 
-int walltime, cputime, userspacetime, kernaltime;
+int walltimeSec, walltimeUsec;
+int cputimeSec, cputimeUsec;
+int userspacetimeSec, userspacetimeUsec;
+int kerneltimeSec, kerneltimeUsec;
 int counterReal, counterProf, counterVirt;
+
+struct itimerval timer;
 
 
 //FUNCTION DECLARATIONS
@@ -25,13 +30,21 @@ bool invalidArg(char *ptr);
 
 long int fib( int n);
 
+void allHandler(int sig);
+void registerHandlers(void);
+void setupTimer(struct itimerval timer);
+void profileProcess(void);
+void printProfile(void);
 
+
+
+//MAIN PROGRAM
 int main(int argc, char *argv[])
 {
   correctNumberOfArgs(argc, 4);
   valueChecker(argc, argv, 1);
   fflush(stdin); //just incase ig
-
+  
   //parent calculates anytime, but prints its profile after the children.
   //pid_t parentpid = getpid();
   pid_t pid = fork();
@@ -39,9 +52,16 @@ int main(int argc, char *argv[])
     
   if(pid == 0) {
     //CHILD 1
-    printf("\nfn2 = %d", fn2);
+
+    //Profiling child 1
+    registerHandlers();
+    setupTimer(timer);
+
     fibresult = fib(fn2);
+    profileProcess();
+    
     printf("\n[Child 1] fibonacci(%d) = %ld\n", fn2, fibresult);
+    printProfile();
   }
   else if(pid > 0){
     //PARENT
@@ -50,18 +70,32 @@ int main(int argc, char *argv[])
 
     if(pid2 == 0){
       //CHILD 2
-      printf("\nfn3 = %d", fn3);
+
+      //Profiling child 2
+      registerHandlers();
+      setupTimer(timer);
+
       fibresult = fib(fn3);
+      profileProcess();
+      
       printf("\n[Child 2] fibonacci(%d) = %ld\n", fn3, fibresult);
+      printProfile();
     }
     else if(pid2 > 0){
       //PARENT EXECUTION FOR FIB, FINALLY
+
+      //Profiling parent
+      registerHandlers();
+      setupTimer(timer);
+
+      fibresult = fib(fn1);
       waitpid(pid, NULL, 0);
       waitpid(pid2, NULL, 0);
 
-      printf("\nfn1 = %d", fn1);
-      fibresult = fib(fn1);
+      profileProcess();
+      
       printf("\n[Parent] fibonacci(%d) = %ld\n", fn1, fibresult);
+      printProfile();
     }
     else {
       printf("\nFORK ISSUE FOR SOME REASON\n");
@@ -153,3 +187,64 @@ long int fib(int n) {
   }
 }
 
+
+//PROFILING SECTION
+void allHandler(int sig) {
+  if(sig == SIGALRM){
+    //getitimer(ITIMER_REAL, &parent);
+    counterReal++;
+  }
+  else if(sig == SIGVTALRM){
+    counterVirt++;
+  }
+  else if(sig == SIGPROF){
+    counterProf++;
+  }
+}
+
+void registerHandlers(void) {
+  signal(SIGALRM, allHandler);
+  signal(SIGVTALRM, allHandler);
+  signal(SIGPROF, allHandler);
+}
+
+void setupTimer(struct itimerval timer) {
+  timer.it_value.tv_sec = 1;
+  timer.it_value.tv_usec = 0;
+  timer.it_interval.tv_sec = 1;
+  timer.it_interval.tv_usec = 0;
+
+  setitimer(ITIMER_REAL, &timer, NULL);
+  setitimer(ITIMER_VIRTUAL, &timer, NULL);
+  setitimer(ITIMER_PROF, &timer, NULL);
+}
+
+void profileProcess() {
+  getitimer(ITIMER_REAL, &timer);
+  int microsecs = timer.it_value.tv_usec;
+  int usecs_remaining = 1000000 - microsecs;
+  walltimeSec = counterReal;
+  walltimeUsec = usecs_remaining;
+
+  getitimer(ITIMER_VIRTUAL, &timer);
+  microsecs = timer.it_value.tv_usec;
+  usecs_remaining = 1000000 - microsecs;
+  userspacetimeSec = counterVirt;
+  userspacetimeUsec = usecs_remaining;
+
+  getitimer(ITIMER_PROF, &timer);
+  microsecs = timer.it_value.tv_usec;
+  usecs_remaining = 1000000 - microsecs;
+  cputimeSec = counterProf;
+  cputimeUsec = usecs_remaining;
+
+  kerneltimeSec = cputimeSec - userspacetimeSec; 
+  kerneltimeUsec = cputimeUsec - userspacetimeUsec;
+}
+
+void printProfile(void) {
+  printf("Wall Time Spent Executing: %d seconds, %d microseconds\n", walltimeSec, walltimeUsec);
+  printf("Total Time Spent on CPU: %d seconds, %d microseconds\n", cputimeSec, cputimeUsec);
+  printf("Time Spent in User-Space: %d seconds, %d microseconds\n", userspacetimeSec, userspacetimeUsec);
+  printf("Time Spent in Kernel-Space: %d seconds, %d microseconds\n", kerneltimeSec, kerneltimeUsec);
+}
